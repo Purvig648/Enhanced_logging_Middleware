@@ -36,7 +36,6 @@ Enhanced_logging_Middleware/
 │   ├── middleware.go    # HTTP Middleware logic
 │── go.mod              # Module file
 │── README.md           # Project documentation
-│── main.go             # Example usage
 ```
 
 ---
