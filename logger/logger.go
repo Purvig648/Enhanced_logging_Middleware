@@ -1,16 +1,12 @@
 package logger
 
 import (
-	"context"
 	"errors"
 	"io"
-	"net/http"
 	"os"
 	"runtime/debug"
 	"sync"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/natefinch/lumberjack"
 	"github.com/sirupsen/logrus"
 )
@@ -20,11 +16,6 @@ var (
 	Logger   *logrus.Logger
 	logMutex sync.Mutex
 )
-
-// ContextKey is a custom type to avoid key collisions in context
-type ContextKey string
-
-const TraceIDKey ContextKey = "trace_id"
 
 // InitLogger initializes the Logrus logger with configurable settings and log rotation
 func InitLogger(format string, level string, logFile string, maxSize int, maxBackups int, maxAge int) {
@@ -60,7 +51,7 @@ func InitLogger(format string, level string, logFile string, maxSize int, maxBac
 	Logger.SetLevel(lvl)
 }
 
-// Log functions with structured error logging
+// Logging functions
 func Info(message string, fields map[string]interface{}) {
 	logMutex.Lock()
 	defer logMutex.Unlock()
@@ -86,52 +77,6 @@ func Warn(message string, fields map[string]interface{}) {
 	Logger.WithFields(fields).Warn(message)
 }
 
-// GenerateTraceID creates a new trace ID
-func GenerateTraceID() string {
-	return uuid.New().String()
-}
-
-// MiddlewareLogger logs HTTP requests and assigns a trace ID, also logs response status
-func MiddlewareLogger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		traceID := r.Header.Get("X-Trace-ID")
-		if traceID == "" {
-			traceID = GenerateTraceID()
-		}
-
-		ctx := context.WithValue(r.Context(), TraceIDKey, traceID)
-		r = r.WithContext(ctx)
-
-		Logger.WithFields(logrus.Fields{
-			"trace_id":  traceID,
-			"method":    r.Method,
-			"path":      r.URL.Path,
-			"remote_ip": r.RemoteAddr,
-		}).Info("Incoming request")
-
-		statusRecorder := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(statusRecorder, r)
-
-		Logger.WithFields(logrus.Fields{
-			"trace_id": traceID,
-			"duration": time.Since(start).String(),
-			"status":   statusRecorder.statusCode,
-		}).Info("Request completed")
-	})
-}
-
-// responseWriter is a wrapper to capture HTTP status codes
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
 // Send logs to external logging services
 func AddLogSink(writer io.Writer) error {
 	if writer == nil {
@@ -139,13 +84,4 @@ func AddLogSink(writer io.Writer) error {
 	}
 	Logger.SetOutput(io.MultiWriter(Logger.Out, writer))
 	return nil
-}
-
-// AsyncLog handles log writing asynchronously to improve performance
-func AsyncLog(level logrus.Level, message string, fields map[string]interface{}) {
-	go func() {
-		logMutex.Lock()
-		defer logMutex.Unlock()
-		Logger.WithFields(fields).Log(level, message)
-	}()
 }
